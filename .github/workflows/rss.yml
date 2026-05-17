@@ -47,4 +47,4 @@ jobs:
           file_pattern: "sent_posts.json"
           branch: main
           commit_user_name: "GitHub Actions"
-          commit_user_email: "actions@github.com"
+          commit_user_email: "actions@github.com" 
