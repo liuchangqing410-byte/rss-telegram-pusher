@@ -4,6 +4,7 @@ import logging
 import asyncio
 import json
 import os
+import re
 from telegram import Bot
 from telegram.error import TelegramError
 
@@ -17,6 +18,41 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+def translate_text(text):
+    """使用 Google 翻译 API 将英文翻译成中文"""
+    try:
+        # 只翻译英文标题（避免重复翻译）
+        if not text or len(text.strip()) < 2:
+            return text
+        
+        # 检测是否包含中文字符，如果有则直接返回
+        if re.search(r'[\u4e00-\u9fff]', text):
+            return text
+        
+        # 使用 Google 翻译（免费接口）
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            'client': 'gtx',
+            'sl': 'en',      # 源语言：英文
+            'tl': 'zh-CN',   # 目标语言：简体中文
+            'dt': 't',
+            'q': text
+        }
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            # 解析翻译结果
+            translated = ''.join([part[0] for part in result[0] if part[0]])
+            logging.info(f"翻译成功：{text[:30]}... → {translated[:30]}...")
+            return translated
+        else:
+            logging.warning(f"翻译失败，状态码：{response.status_code}")
+            return text
+    except Exception as e:
+        logging.warning(f"翻译出错：{str(e)}，返回原文")
+        return text
 
 def load_sent_posts():
     try:
@@ -78,9 +114,19 @@ def escape_markdown(text):
 async def send_message(bot, title, link, delay=3):
     try:
         await asyncio.sleep(delay)
-        escaped_title = escape_markdown(title)
+        
+        # 翻译标题
+        translated_title = translate_text(title)
+        
+        escaped_title = escape_markdown(translated_title)
         escaped_link = escape_markdown(link)
-        message = f"`{escaped_title}`\n{escaped_link}"
+        
+        # 如果翻译后的标题和原标题不同，显示双语
+        if translated_title != title:
+            message = f"📦 **{escaped_title}**\n🔗 {escaped_link}\n📖 原文：`{escape_markdown(title[:50])}...`"
+        else:
+            message = f"📦 **{escaped_title}**\n🔗 {escaped_link}"
+        
         logging.info(f"发送消息：{message[:100]}")
         await bot.send_message(
             chat_id=CHAT_ID,
