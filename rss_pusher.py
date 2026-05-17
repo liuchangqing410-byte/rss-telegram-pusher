@@ -1,4 +1,5 @@
 import feedparser
+import requests
 import logging
 import asyncio
 import json
@@ -28,20 +29,39 @@ def load_sent_posts():
     except Exception as e:
         logging.error(f"读取已发送ID失败：{str(e)}")
         return []
-
-def save_sent_posts(post_ids):
-    try:
-        with open(POSTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(post_ids, f, ensure_ascii=False, indent=2)
-        logging.info(f"已保存ID列表（共{len(post_ids)}条）")
-    except Exception as e:
-        logging.error(f"保存已发送ID失败：{str(e)}")
-
 def fetch_updates():
     try:
         logging.info(f"获取RSS源：{RSS_URL}")
-        feed = feedparser.parse(RSS_URL)
-        if feed.bozo:
+        # 设置请求头，告诉服务器我们期望的格式
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+        }
+        response = requests.get(RSS_URL, headers=headers, timeout=30)
+        response.encoding = 'utf-8'
+        
+        if response.status_code != 200:
+            logging.error(f"HTTP 请求失败，状态码：{response.status_code}")
+            return None
+        
+        # 手动将响应的文本交给 feedparser 解析（绕过 Content-Type 检查）
+        feed = feedparser.parse(response.text)
+        
+        if feed.bozo:  # bozo 为 True 表示解析时有错误
+            logging.warning(f"RSS解析警告：{feed.bozo_exception}")
+            # 即使有警告，如果条目不为空，仍然尝试使用
+            if not feed.entries:
+                logging.error("解析后无任何条目")
+                return None
+        
+        logging.info(f"成功获取 {len(feed.entries)} 条 RSS 条目")
+        return feed
+    except requests.exceptions.RequestException as e:
+        logging.error(f"网络请求失败：{str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"获取RSS失败：{str(e)}")
+        return None
             logging.error(f"RSS解析错误：{feed.bozo_exception}")
             return None
         logging.info(f"成功获取{len(feed.entries)}条RSS条目")
